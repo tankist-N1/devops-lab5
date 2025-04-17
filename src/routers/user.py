@@ -1,67 +1,32 @@
-from fastapi.testclient import TestClient
-from src.main import app
+from fastapi import APIRouter, HTTPException, status
 
-client = TestClient(app)
+from src.schemas.user import CreateUser, UserInfo
+from src.fake_db import db
 
-# Существующие пользователи
-users = [
-    {
-        'id': 1,
-        'name': 'Ivan Ivanov',
-        'email': 'i.i.ivanov@mail.com',
-    },
-    {
-        'id': 2,
-        'name': 'Petr Petrov',
-        'email': 'p.p.petrov@mail.com',
-    }
-]
+router = APIRouter()
 
-def test_get_existed_user():
-    '''Получение существующего пользователя'''
-    response = client.get("/api/v1/user", params={'email': users[0]['email']})
-    assert response.status_code == 200
-    assert response.json() == users[0]
+@router.get("", status_code=status.HTTP_200_OK, response_model=UserInfo, responses={404: {"detail": "User not found"}})
+async def get_user(email: str):
+    '''Получение пользователя по email'''
+    user = db.get_user_by_email(email)
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    return UserInfo(
+        id=user['id'],
+        name=user['name'],
+        email=user['email']
+    )
+    
+@router.post("", status_code=status.HTTP_201_CREATED, response_model=int,
+             responses={409: {"detail": "User with this email already exists"}})
+async def create_user(data: CreateUser):
+    '''Создание пользователя'''
+    if db.get_user_by_email(data.email) is not None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="User with this email already exists")
+    db.create_user(data.name, data.email)
+    return db.get_user_by_email(data.email)['id']
 
-def test_get_unexisted_user():
-    '''Получение несуществующего пользователя'''
-    response = client.get("/api/v1/user", params={'email': 'nonexistent@example.com'})
-    assert response.status_code == 404
-    assert response.json() == {"detail": "User not found"}
-
-def test_create_user_with_valid_email():
-    '''Создание пользователя с уникальной почтой'''
-    data = {
-        'name': 'New User',
-        'email': 'new.user@example.com'
-    }
-    response = client.post("/api/v1/user", json=data)
-    assert response.status_code == 201
-    assert isinstance(response.json(), int)
-
-    get_response = client.get("/api/v1/user", params={'email': data['email']})
-    assert get_response.status_code == 200
-    assert get_response.json()['name'] == data['name']
-    assert get_response.json()['email'] == data['email']
-
-def test_create_user_with_invalid_email():
-    '''Создание пользователя с почтой, которую использует другой пользователь'''
-    existing_user = users[0]
-    data = {
-        'name': 'Duplicate User',
-        'email': existing_user['email']
-    }
-    response = client.post("/api/v1/user", json=data)
-    assert response.status_code == 409
-    assert response.json() == {"detail": "User with this email already exists"}
-
-def test_delete_user():
+@router.delete("", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_user(email: str):
     '''Удаление пользователя'''
-    email = 'user.to.delete@example.com'
-    client.post("/api/v1/user", json={'name': 'To Delete', 'email': email})
-
-    delete_response = client.delete("/api/v1/user", params={'email': email})
-    assert delete_response.status_code == 204
-
-    get_response = client.get("/api/v1/user", params={'email': email})
-    assert get_response.status_code == 404
+    db.delete_user_by_email(email)
