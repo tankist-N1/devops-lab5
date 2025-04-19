@@ -31,5 +31,5 @@ jobs:
       - name: Build and Push Docker image
         uses: docker/build-push-action@v6
         with:
-          push: trueы
+          push: true
           tags: ${{ vars.DOCKERHUB_USERNAME }}/my-app:latest
